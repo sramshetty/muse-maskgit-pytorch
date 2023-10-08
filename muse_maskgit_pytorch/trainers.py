@@ -6,6 +6,8 @@ from functools import partial
 
 from beartype import beartype
 
+import numpy as np
+
 import torch
 from torch import nn
 from torch.optim import Adam
@@ -111,6 +113,27 @@ class ImageDataset(Dataset):
         path = self.paths[index]
         img = Image.open(path)
         return self.transform(img)
+    
+# latent related helpers fnuctions and dataset
+
+class LatentDataset(Dataset):
+    def __init__(
+        self,
+        file,
+        image_size,
+    ):
+        super().__init__()
+        self.file = file
+        self.image_size = image_size
+        self.latents = np.load(file)
+
+        print(f'{len(self.latents)} training samples found at {file}')
+
+    def __len__(self):
+        return len(self.latents)
+
+    def __getitem__(self, index):
+        return torch.nn.functional.interpolate(torch.Tensor(self.latents[index]).unsqueeze(0), (64, 64)).squeeze(0)
 
 # main trainer class
 
@@ -120,10 +143,11 @@ class VQGanVAETrainer(nn.Module):
         self,
         vae: VQGanVAE,
         *,
-        folder,
         num_train_steps,
         batch_size,
         image_size,
+        np_file,
+        folder = None,
         lr = 3e-4,
         grad_accum_every = 1,
         max_grad_norm = None,
@@ -186,7 +210,8 @@ class VQGanVAETrainer(nn.Module):
 
         # create dataset
 
-        self.ds = ImageDataset(folder, image_size)
+        # self.ds = ImageDataset(folder, image_size)
+        self.ds = LatentDataset(np_file, image_size)
 
         # split for validation
 
@@ -384,7 +409,8 @@ class VQGanVAETrainer(nn.Module):
 
                 logs['reconstructions'] = grid
 
-                save_image(grid, str(self.results_folder / f'{filename}.png'))
+                if self.vae.channels in [1, 3]:
+                    save_image(grid, str(self.results_folder / f'{filename}.png'))
 
             self.print(f'{steps}: saving to {str(self.results_folder)}')
 
